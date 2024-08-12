@@ -1,0 +1,45 @@
+from typing import List, Union, Generator, Iterator
+from pydantic import BaseModel
+import requests
+import os
+
+class Pipeline:
+    class Valves(BaseModel):
+        api_url: str  # Nutze die Typisierung, um klar zu machen, was Valves enthält.
+
+    def __init__(self):
+        self.name = "Flowise Integration Pipeline"
+        # Initialisiere die API-URL aus Umgebungsvariablen oder verwende einen Standardwert
+        self.valves = self.Valves(api_url=os.getenv("FLOWISE_API_URL", "http://xxx.xxx.xxx.xxx:3000/api/v1/prediction/7fe15ada-b771-4699-b292-1b4958cd35ce"))
+
+    async def on_startup(self):
+        print(f"{self.name} is starting up.")
+
+    async def on_shutdown(self):
+        print(f"{self.name} is shutting down.")
+
+    def query(self, question: str) -> dict:
+        """Sendet eine Frage an die Flowise API und gibt die Antwort zurück."""
+        payload = {"question": question, "chat_message": {"content": question}}
+        try:
+            # Erhöhter Timeout-Wert auf 30 Sekunden
+            response = requests.post(self.valves.api_url, json=payload, timeout=120)
+            response.raise_for_status()  # Stellt sicher, dass die Anfrage erfolgreich war
+            return response.json()
+        except requests.exceptions.HTTPError as e:
+            print(f"HTTP error occurred: {e}")
+        except requests.exceptions.Timeout:
+            print("Timeout occurred. Please try again later.")
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed: {e}")
+        return {"error": "Failed to get a response"}
+
+    def pipe(self, user_message: str, model_id: str, messages: List[dict], body: dict) -> Union[str, Generator, Iterator]:
+        """Verarbeitet Benutzernachrichten durch die API und gibt eine Antwort oder Fehlermeldung zurück."""
+        print(f"{self.name} processing message.")
+        output = self.query(user_message)
+
+        if "error" not in output:
+            return output.get("text", "No response text available.")
+        else:
+            return output.get("error", "An error occurred while processing your request.")
